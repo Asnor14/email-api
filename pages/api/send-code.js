@@ -5,26 +5,26 @@ const codes = new Map();
 
 // Generate 6-digit code
 function generateCode() {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 // Create transporter
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
-    },
+  service: 'gmail',
+  auth: {
+    user: process.env.GMAIL_USER,
+    pass: process.env.GMAIL_APP_PASSWORD,
+  },
 });
 
 // Email template
 function getEmailTemplate(code, type) {
-    const title = type === 'registration' ? 'Verify Your Email' : 'Reset Your Password';
-    const message = type === 'registration'
-        ? 'Thank you for registering with PillPal. Use the code below to verify your email.'
-        : 'Use the code below to reset your password.';
+  const title = type === 'registration' ? 'Verify Your Email' : 'Reset Your Password';
+  const message = type === 'registration'
+    ? 'Thank you for registering with PillPal. Use the code below to verify your email.'
+    : 'Use the code below to reset your password.';
 
-    return `
+  return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -92,47 +92,47 @@ function getEmailTemplate(code, type) {
 }
 
 export default async function handler(req, res) {
-    // Handle CORS preflight
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
 
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-    const { email, type } = req.body;
+  const { email, type, code: providedCode } = req.body;
 
-    if (!email || !type) {
-        return res.status(400).json({ error: 'Email and type are required' });
-    }
+  if (!email || !type) {
+    return res.status(400).json({ error: 'Email and type are required' });
+  }
 
-    if (!['registration', 'password_reset'].includes(type)) {
-        return res.status(400).json({ error: 'Invalid type' });
-    }
+  if (!['registration', 'password_reset'].includes(type)) {
+    return res.status(400).json({ error: 'Invalid type' });
+  }
 
-    try {
-        const code = generateCode();
-        const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+  try {
+    const code = providedCode || generateCode();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
 
-        // Store code
-        codes.set(`${email.toLowerCase()}_${type}`, { code, expiresAt });
+    // Store code (still useful for single-instance, but client-side verify is safer for serverless)
+    codes.set(`${email.toLowerCase()}_${type}`, { code, expiresAt });
 
-        // Send email
-        await transporter.sendMail({
-            from: `"PillPal" <${process.env.GMAIL_USER}>`,
-            to: email,
-            subject: type === 'registration'
-                ? 'PillPal - Verify Your Email'
-                : 'PillPal - Password Reset Code',
-            html: getEmailTemplate(code, type),
-        });
+    // Send email
+    await transporter.sendMail({
+      from: `"PillPal" <${process.env.GMAIL_USER}>`,
+      to: email,
+      subject: type === 'registration'
+        ? 'PillPal - Verify Your Email'
+        : 'PillPal - Password Reset Code',
+      html: getEmailTemplate(code, type),
+    });
 
-        return res.status(200).json({ success: true, message: 'Code sent' });
-    } catch (error) {
-        console.error('Email error:', error);
-        return res.status(500).json({ error: 'Failed to send email' });
-    }
+    return res.status(200).json({ success: true, message: 'Code sent' });
+  } catch (error) {
+    console.error('Email error:', error);
+    return res.status(500).json({ error: 'Failed to send email' });
+  }
 }
 
 // Export codes map for verify-code endpoint
