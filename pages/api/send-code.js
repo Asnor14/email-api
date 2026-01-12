@@ -1,7 +1,5 @@
+import { firestore } from '../../utils/firebaseAdmin';
 const nodemailer = require('nodemailer');
-
-// In-memory code storage (for serverless, consider using Redis/Upstash)
-const codes = new Map();
 
 // Generate 6-digit code
 function generateCode() {
@@ -115,8 +113,13 @@ export default async function handler(req, res) {
     const code = providedCode || generateCode();
     const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
 
-    // Store code (still useful for single-instance, but client-side verify is safer for serverless)
-    codes.set(`${email.toLowerCase()}_${type}`, { code, expiresAt });
+    // Store in Firestore
+    await firestore.collection('otps').doc(email.toLowerCase()).set({
+      code,
+      type,
+      expiresAt,
+      createdAt: new Date().toISOString()
+    });
 
     // Send email
     await transporter.sendMail({
@@ -135,5 +138,3 @@ export default async function handler(req, res) {
   }
 }
 
-// Export codes map for verify-code endpoint
-export { codes };

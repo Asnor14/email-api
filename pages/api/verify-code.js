@@ -1,4 +1,4 @@
-import { codes } from './send-code';
+import { firestore } from '../../utils/firebaseAdmin';
 
 export default async function handler(req, res) {
     // Handle CORS preflight
@@ -17,19 +17,29 @@ export default async function handler(req, res) {
     }
 
     try {
-        const key = `${email.toLowerCase()}_${type}`;
-        const stored = codes.get(key);
+        const docRef = firestore.collection('otps').doc(email.toLowerCase());
+        const doc = await docRef.get();
 
-        if (!stored) {
+        if (!doc.exists) {
             return res.status(200).json({
                 success: false,
                 error: 'No verification code found. Please request a new one.'
             });
         }
 
+        const stored = doc.data();
+
+        // Check type match
+        if (stored.type !== type) {
+            return res.status(200).json({
+                success: false,
+                error: 'Invalid verification type.'
+            });
+        }
+
         // Check expiry
         if (Date.now() > stored.expiresAt) {
-            codes.delete(key);
+            await docRef.delete();
             return res.status(200).json({
                 success: false,
                 error: 'Code has expired. Please request a new one.'
@@ -44,8 +54,10 @@ export default async function handler(req, res) {
             });
         }
 
-        // Success - remove code
-        codes.delete(key);
+        // Success - DO NOT delete code here, as it might be needed for the actual action (like update password)
+        // Or if it is registration, maybe we can delete it. 
+        // For now, let's keep it until expiry or final action consumes it.
+
         return res.status(200).json({ success: true, message: 'Code verified' });
 
     } catch (error) {
