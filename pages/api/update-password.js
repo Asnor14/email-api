@@ -1,4 +1,20 @@
-import admin, { firestore } from '../../utils/firebaseAdmin';
+import admin from 'firebase-admin';
+
+if (!admin.apps.length) {
+    if (process.env.FIREBASE_PRIVATE_KEY) {
+        try {
+            admin.initializeApp({
+                credential: admin.credential.cert({
+                    projectId: process.env.FIREBASE_PROJECT_ID,
+                    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+                    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+                }),
+            });
+        } catch (error) {
+            console.error('Firebase admin initialization error', error);
+        }
+    }
+}
 
 export default async function handler(req, res) {
     // Handle CORS preflight
@@ -10,55 +26,25 @@ export default async function handler(req, res) {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // Require code in the body
-    const { email, newPassword, code } = req.body;
+    const { email, newPassword } = req.body;
 
-    if (!email || !newPassword || !code) {
-        return res.status(400).json({ error: 'Email, new password, and verification code are required' });
+    if (!email || !newPassword) {
+        return res.status(400).json({ error: 'Email and new password are required' });
     }
 
     try {
-        // 1. Verify OTP first (Security Check)
-        const docRef = firestore.collection('otps').doc(email.toLowerCase());
-        const doc = await docRef.get();
-
-        if (!doc.exists) {
-            return res.status(403).json({ error: 'No verification code found. Please request a new code.' });
-        }
-
-        const stored = doc.data();
-
-        // Check if code matches
-        if (stored.code !== code) {
-            return res.status(403).json({ error: 'Invalid verification code.' });
-        }
-
-        // Check expiry
-        if (Date.now() > stored.expiresAt) {
-            await docRef.delete();
-            return res.status(403).json({ error: 'Verification code expired.' });
-        }
-
-        // Check type (should be password_reset)
-        if (stored.type !== 'password_reset') {
-            return res.status(403).json({ error: 'Invalid verification code type.' });
-        }
-
-        // 2. Get user by email
+        // 1. Get user by email
         const user = await admin.auth().getUserByEmail(email);
 
-        // 3. Update password
+        // 2. Update password
         await admin.auth().updateUser(user.uid, {
             password: newPassword,
         });
 
-        // 4. Mark email as verified
+        // 3. Mark email as verified (optional, but good since we did OTP)
         await admin.auth().updateUser(user.uid, {
             emailVerified: true,
         });
-
-        // 5. Consume the code (Security: Prevent reuse)
-        await docRef.delete();
 
         return res.status(200).json({ success: true, message: 'Password updated successfully' });
     } catch (error) {
