@@ -46,3 +46,4 @@ npm run dev
   "type": "registration" | "password_reset"
 }
 ```
+# deployment ready
